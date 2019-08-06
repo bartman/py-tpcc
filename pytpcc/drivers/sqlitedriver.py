@@ -32,6 +32,7 @@
 from __future__ import with_statement
 
 import os
+import re
 import sqlite3
 import logging
 import commands
@@ -131,16 +132,34 @@ class SqliteDriver(AbstractDriver):
             logging.debug("Deleting database '%s'" % self.database)
             os.unlink(self.database)
         
-        if os.path.exists(self.database) == False:
-            logging.debug("Loading DDL file '%s'" % (self.ddl))
-            ## HACK
-            cmd = "sqlite3 %s < %s" % (self.database, self.ddl)
-            (result, output) = commands.getstatusoutput(cmd)
-            assert result == 0, cmd + "\n" + output
-        ## IF
-            
+        # apply the DDL if file does not exist, or database is :memory:
+        apply_ddl = (self.database == ':memory:') or (not os.path.exists(self.database))
+
         self.conn = sqlite3.connect(self.database)
+
+        if apply_ddl:
+            self.applyDDL()
+
         self.cursor = self.conn.cursor()
+
+    ## ----------------------------------------------
+    ## applyDDL
+    ## ----------------------------------------------
+    def applyDDL(self):
+        logging.debug("Loading DDL file '%s'" % (self.ddl))
+        f = open(self.ddl, "r")
+        lines = f.readlines()
+        f.close()
+        cmd = ""
+        for line in lines:
+            line = line.strip()
+            cmd += line
+            if re.match(r".*;\s*$", cmd):
+                logging.debug(cmd)
+                self.conn.execute(cmd)
+                cmd = ""
+        if cmd:
+            raise Exception('%s: SQL not terminated by ;' % (self.ddl))
     
     ## ----------------------------------------------
     ## loadTuples
